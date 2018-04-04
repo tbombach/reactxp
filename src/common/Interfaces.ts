@@ -183,6 +183,7 @@ export abstract class Network {
 
 export abstract class Platform {
     abstract getType(): Types.PlatformType;
+    abstract select<T>(specifics: { [ platform in Types.PlatformType | 'default' ]?: T }): T | undefined;
 }
 
 export abstract class Input {
@@ -234,6 +235,10 @@ export abstract class Styles {
     abstract createAnimatedImageStyle(ruleSet: Types.AnimatedImageStyle): Types.AnimatedImageStyleRuleSet;
     abstract createLinkStyle(ruleSet: Types.LinkStyleRuleSet, cacheStyle?: boolean): Types.LinkStyleRuleSet;
     abstract createPickerStyle(ruleSet: Types.PickerStyle, cacheStyle?: boolean): Types.PickerStyleRuleSet;
+
+    // This method isn't part of the documented ReactXP interface and shouldn't be used by
+    // app-level code, but it is needed for some ReactXP extensions (e.g. reactxp-imagesvg),
+    // so we export it here.
     abstract getCssPropertyAliasesCssStyle(): {[key: string]: string};
 }
 

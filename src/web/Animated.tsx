@@ -59,7 +59,7 @@ const animatedPropUnits: { [key: string]: string } = {
 
 // Every Animation subclass should extend this.
 export abstract class Animation {
-    _id: number;
+    _id: number|undefined;
 
     // Starts the animation
     abstract start(onEnd?: Types.Animated.EndCallback): void;
@@ -81,8 +81,8 @@ export interface ValueListener {
 export class Value extends Types.AnimatedValue {
     private _value: number|string;
     private _listeners: ValueListener[];
-    private _interpolationConfig: { [key: number]: string|number };
-    
+    private _interpolationConfig: { [key: number]: string|number } | undefined;
+
     // Initializes the object with the defaults and assigns the id for the animated value.
     constructor(value: number) {
         super(value);
@@ -100,6 +100,9 @@ export class Value extends Types.AnimatedValue {
     }
 
     _getInterpolatedValue(key: number): string|number {
+        if (!this._interpolationConfig) {
+            throw 'There is no interpolation config but one is required';
+        }
         return this._interpolationConfig[key];
     }
 
@@ -116,16 +119,15 @@ export class Value extends Types.AnimatedValue {
         // expensive from a performance and responsiveness perspective.
         if (config.inputRange.length !== 2) {
             if (AppConfig.isDevelopmentMode()) {
-                if (AppConfig.isDevelopmentMode()) {
-                    console.log('Web implementation of interpolate API currently supports only two interpolation values.');
-                }
+                console.log('Web implementation of interpolate API currently supports only two interpolation values.');
             }
         }
 
-        this._interpolationConfig = {};
+        const newInterpolationConfig: { [key: number]: string|number } = {};
         _.each(config.inputRange, (key, index) => {
-            this._interpolationConfig[key] = config.outputRange[index];
+            newInterpolationConfig[key] = config.outputRange[index];
         });
+        this._interpolationConfig = newInterpolationConfig;
 
         return this;
     }
@@ -166,6 +168,20 @@ export class Value extends Types.AnimatedValue {
     // Start a specific animation.
     startTransition(toValue: number|string, duration: number, easing: string, delay: number,
             onEnd: Types.Animated.EndCallback): void {
+
+        // If there are no listeners, the app probably has a bug where it's
+        // starting an animation before the associated element is mounted.
+        // Complete the animation immediately by updating to the end value
+        // and caling the onEnd callback.
+        if (this._listeners.length === 0) {
+            this.updateFinalValue(toValue);
+            if (onEnd) {
+                onEnd({ finished: false });
+            }
+
+            return;
+        }
+
         _.each(this._listeners, listener => {
             listener.startTransition(this, this._getValue(), toValue, duration, easing, delay, onEnd);
         });
@@ -207,15 +223,15 @@ export let timing: Types.Animated.TimingFunction = function(
                 let duration = config.duration !== undefined ? config.duration : 500;
                 let delay = config.delay || 0;
                 value.startTransition(config.toValue, duration, easing.cssName, delay, result => {
-                    if (onEnd) {
-                        onEnd(result);
-                    }
-
                     // Restart the loop?
                     if (config.loop && !stopLooping) {
                         animate();
                     } else {
                         value.updateFinalValue(config.toValue);
+                    }
+
+                    if (onEnd) {
+                        onEnd(result);
                     }
                 });
             };
@@ -341,13 +357,15 @@ type AnimatedValueMap = { [transform: string]: AnimatedAttribute };
 function createAnimatedComponent<PropsType extends Types.CommonProps>(Component: any): any {
     class AnimatedComponentGenerated extends React.Component<PropsType, void>
             implements RX.AnimatedComponent<PropsType, void>, ValueListener {
-                
+
         private _mountedComponent: any = null;
         private _propsWithoutStyle: any;
-        private _processedStyle: { [attribute: string]: string};
+        // Gets initialized via _updateStypes
+        private _processedStyle!: { [attribute: string]: string};
 
         private _animatedAttributes: AnimatedValueMap;
-        private _staticTransforms: { [transform: string]: string };
+        // Gets initialized via _updateStypes
+        private _staticTransforms!: { [transform: string]: string };
         private _animatedTransforms: AnimatedValueMap;
 
         constructor(props: PropsType) {
@@ -369,6 +387,12 @@ function createAnimatedComponent<PropsType extends Types.CommonProps>(Component:
         }
 
         setValue(valueObject: Value, newValue: number | string): void {
+            // We should never get here if the component isn't mounted,
+            // but we'll add this additional protection.
+            if (!this._mountedComponent) {
+                return;
+            }
+
             let attrib = this._findAnimatedAttributeByValue(this._animatedAttributes, valueObject);
             if (attrib) {
                 let cssValue = this._generateCssAttributeValue(attrib, valueObject, valueObject._getValue());
@@ -385,7 +409,13 @@ function createAnimatedComponent<PropsType extends Types.CommonProps>(Component:
         startTransition(valueObject: Value, fromValue: number|string, toValue: number|string, duration: number,
                 easing: string, delay: number, onEnd: Types.Animated.EndCallback): void {
 
-            let updateTransition = false; 
+            // We should never get here if the component isn't mounted,
+            // but we'll add this additional protection.
+            if (!this._mountedComponent) {
+                return;
+            }
+
+            let updateTransition = false;
 
             let attrib = this._findAnimatedAttributeByValue(this._animatedAttributes, valueObject);
             if (attrib) {
@@ -395,7 +425,7 @@ function createAnimatedComponent<PropsType extends Types.CommonProps>(Component:
                     }
                 }
                 this._animatedAttributes[attrib].activeTransition = {
-                    property: attrib,
+                    property: Styles.convertJsToCssStyle(attrib),
                     from: this._generateCssAttributeValue(attrib, this._animatedAttributes[attrib].valueObject, fromValue),
                     to: this._generateCssAttributeValue(attrib, this._animatedAttributes[attrib].valueObject, toValue),
                     duration,
@@ -434,6 +464,12 @@ function createAnimatedComponent<PropsType extends Types.CommonProps>(Component:
 
         // Stops a pending transition, returning the value at the current time.
         stopTransition(valueObject: Value): number|string|undefined {
+            // We should never get here if the component isn't mounted,
+            // but we'll add this additional protection.
+            if (!this._mountedComponent) {
+                return;
+            }
+
             let partialValue: number|string|undefined;
             let stoppedTransition: ExtendedTransition|undefined;
             let updateTransition = false;
@@ -465,7 +501,7 @@ function createAnimatedComponent<PropsType extends Types.CommonProps>(Component:
                     let activeTransition = this._animatedTransforms[transform].activeTransition;
                     if (activeTransition) {
                         // We don't currently support updating to an intermediate value
-                        // for interpolated transform values. This is because getComputedStyle
+                        // for transform values. This is because getComputedStyle
                         // returns a transform matrix for 'transform'. To implement this, we'd
                         // need to convert the matrix back to a rotation, scale, etc.
                         partialValue = activeTransition.toValue;
@@ -503,6 +539,12 @@ function createAnimatedComponent<PropsType extends Types.CommonProps>(Component:
         // Updates the "transform" CSS attribute for the element to reflect all
         // active transitions.
         private _updateTransition() {
+            // We should never get here if the component isn't mounted,
+            // but we'll add this additional protection.
+            if (!this._mountedComponent) {
+                return;
+            }
+
             let activeTransitions: ITransitionSpec[] = [];
             _.each(this._animatedAttributes, attrib => {
                 if (attrib.activeTransition) {
@@ -630,7 +672,7 @@ function createAnimatedComponent<PropsType extends Types.CommonProps>(Component:
             // Update this._animatedAttributes and this._animatedTransforms so they match
             // the updated style.
 
-            // Remove any previous animated attributes that are no longer present 
+            // Remove any previous animated attributes that are no longer present
             // or associated with different value objects.
             _.each(this._animatedAttributes, (value, attrib) => {
                 if (!newAnimatedAttributes[attrib] || newAnimatedAttributes[attrib] !== value.valueObject) {
@@ -639,6 +681,7 @@ function createAnimatedComponent<PropsType extends Types.CommonProps>(Component:
                             console.error('Animated style attribute removed while the animation was active');
                         }
                     }
+                    value.valueObject.removeListener(this);
                     delete this._animatedAttributes[attrib];
                 }
             });
@@ -647,6 +690,9 @@ function createAnimatedComponent<PropsType extends Types.CommonProps>(Component:
             _.each(newAnimatedAttributes, (value, attrib) => {
                 if (!this._animatedAttributes[attrib]) {
                     this._animatedAttributes[attrib] = { valueObject: value };
+                    if (this._mountedComponent) {
+                        value.addListener(this);
+                    }
                 }
             });
 
@@ -659,6 +705,7 @@ function createAnimatedComponent<PropsType extends Types.CommonProps>(Component:
                             console.warn('Should not remove an animated transform attribute while the animation is active');
                         }
                     }
+                    value.valueObject.removeListener(this);
                     delete this._animatedTransforms[transform];
                 }
             });
@@ -667,9 +714,12 @@ function createAnimatedComponent<PropsType extends Types.CommonProps>(Component:
             _.each(newAnimatedTransforms, (value, transform) => {
                 if (!this._animatedTransforms[transform]) {
                     this._animatedTransforms[transform] = { valueObject: value };
+                    if (this._mountedComponent) {
+                        value.addListener(this);
+                    }
                 }
             });
-        
+
             // Update the transform attribute in this._processedStyle.
             let transformList = this._generateCssTransformList(true);
             if (transformList) {
@@ -760,7 +810,7 @@ export var createValue: (initialValue: number) => Value = function(initialValue:
     return new Value(initialValue);
 };
 
-export var interpolate: (value: Value, inputRange: number[], outputRange: string[]) => 
+export var interpolate: (value: Value, inputRange: number[], outputRange: string[]) =>
         Value = function(value: Value, inputRange: number[], outputRange: string[]) {
     return value.interpolate({ inputRange: inputRange, outputRange: outputRange });
 };

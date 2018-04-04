@@ -13,7 +13,7 @@ import Types = require('../common/Types');
 // Hack to allow inline-require without importing node.d.ts
 declare var require: (path: string) => any;
 if (typeof(document) !== 'undefined') {
-    var ifvisible = require('ifvisible.js');
+    var ifvisible = require('ifvisible');
 }
 
 export class App extends RX.App {
@@ -39,6 +39,8 @@ export class App extends RX.App {
                     this.activationStateChangedEvent.fire(this._activationState);
                 }
             });
+        } else {
+            this._activationState = Types.AppActivationState.Active;
         }
     }
 

@@ -10,7 +10,9 @@
 
 import React = require('react');
 
-import AnimatedImpl = require('./Animated');
+import RN = require('react-native');
+
+import {CommonAnimatedClasses, makeAnimated} from '../native-common/Animated';
 import RXInterfaces = require('../common/Interfaces');
 import RXModuleInterface = require('../common/ModuleInterface');
 import RXTypes = require('../common/Types');
@@ -18,7 +20,7 @@ import RXTypes = require('../common/Types');
 // -- STRANGE THINGS GOING ON HERE --
 // See web/ReactXP.tsx for more details.
 
-import AccessibilityImpl from '../native-common/Accessibility';
+import AccessibilityImpl from './Accessibility';
 import ActivityIndicatorImpl from '../native-common/ActivityIndicator';
 import AlertImpl from '../native-common/Alert';
 import AppImpl from '../native-common/App';
@@ -58,7 +60,7 @@ ViewBase.setDefaultViewStyle(_defaultViewStyle);
 
 // Initialize Android implementation of platform accessibility helpers inside the singleton
 // instance of native-common AccessibilityUtil. This is to let native-common components access
-// platform specific APIs through native-common implementation itself. 
+// platform specific APIs through native-common implementation itself.
 import AccessibilityUtil from '../native-common/AccessibilityUtil';
 import AccessibilityPlatformUtil  from './AccessibilityUtil';
 
@@ -125,7 +127,12 @@ module ReactXP {
     export type WebView = RXInterfaces.WebView;
     export var WebView: RXInterfaces.WebViewConstructor = WebViewImpl;
 
-    export import Animated = AnimatedImpl.Animated;
+    const androidAnimatedClasses =  {
+        ...CommonAnimatedClasses,
+        Text: RN.Animated.createAnimatedComponent(TextImpl)
+    };
+
+    export const Animated = makeAnimated(androidAnimatedClasses);
     export import CommonProps = RXTypes.CommonProps;
     export import CommonStyledProps = RXTypes.CommonStyledProps;
     export import Stateless = RXTypes.Stateless;

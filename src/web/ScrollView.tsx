@@ -95,8 +95,8 @@ export class ScrollView extends ViewBase<Types.ScrollViewProps, {}> implements R
                 overflowY: 'scroll',
                 paddingRight: 30 - nativeScrollbarWidth,
                 marginRight: -30,
-                // Fixes a bug for Chrome beta where the parent flexbox (customScrollContainer) doesn't 
-                // recognize that its child got populated with items. Smallest default width gives an 
+                // Fixes a bug for Chrome beta where the parent flexbox (customScrollContainer) doesn't
+                // recognize that its child got populated with items. Smallest default width gives an
                 // indication that content will exist here.
                 minHeight: 0
             };
@@ -107,8 +107,8 @@ export class ScrollView extends ViewBase<Types.ScrollViewProps, {}> implements R
                 overflowX: 'scroll',
                 paddingBottom: 30 - nativeScrollbarWidth,
                 marginBottom: -30,
-                // Fixes a bug for Chrome beta where the parent flexbox (customScrollContainer) doesn't 
-                // recognize that its child got populated with items. Smallest default width gives an 
+                // Fixes a bug for Chrome beta where the parent flexbox (customScrollContainer) doesn't
+                // recognize that its child got populated with items. Smallest default width gives an
                 // indication that content will exist here.
                 minWidth: 0
             };
@@ -118,7 +118,7 @@ export class ScrollView extends ViewBase<Types.ScrollViewProps, {}> implements R
     }
 
     private _mounted = false;
-    private _customScrollbar: CustomScrollbar;
+    private _customScrollbar: CustomScrollbar | undefined;
     private _customScrollbarEnabled = true;
     private _dragging = false;
 
@@ -151,13 +151,7 @@ export class ScrollView extends ViewBase<Types.ScrollViewProps, {}> implements R
         super.componentDidMount();
         this._mounted = true;
 
-        if (this._customScrollbarEnabled) {
-            let element = ReactDOM.findDOMNode(this) as HTMLElement;
-            if (element) {
-                this._customScrollbar = new CustomScrollbar(element);
-                this._customScrollbar.init({ horizontal: this.props.horizontal, vertical: this.props.vertical });
-            }
-        }
+        this.createCustomScrollbarsIfNeeded(this.props);
     }
 
     componentWillReceiveProps(newProps: Types.ScrollViewProps) {
@@ -169,8 +163,9 @@ export class ScrollView extends ViewBase<Types.ScrollViewProps, {}> implements R
         super.componentWillUnmount();
         this._mounted = false;
 
-        if (this._customScrollbarEnabled) {
+        if (this._customScrollbar) {
             this._customScrollbar.dispose();
+            this._customScrollbar = undefined;
         }
     }
 
@@ -184,7 +179,7 @@ export class ScrollView extends ViewBase<Types.ScrollViewProps, {}> implements R
             return;
         }
 
-        if (this._customScrollbarEnabled) {
+        if (this._customScrollbarEnabled && this._customScrollbar) {
             this._customScrollbar.update();
         }
 
@@ -211,6 +206,38 @@ export class ScrollView extends ViewBase<Types.ScrollViewProps, {}> implements R
 
     private _onPropsChange(props: Types.ScrollViewProps) {
         this._customScrollbarEnabled = ScrollViewConfig.useCustomScrollbars();
+
+        // If we're turning on custom scrollbars or toggling vertical and/or horizontal, we need to re-create
+        // the scrollbar.
+        this.createCustomScrollbarsIfNeeded(props);
+    }
+
+    private createCustomScrollbarsIfNeeded(props: Types.ScrollViewProps) {
+        if (this._mounted && this._customScrollbarEnabled) {
+            if (this._customScrollbar) {
+                if (this.props.horizontal === props.horizontal &&
+                    this.props.vertical === props.vertical &&
+                    this.props.showsHorizontalScrollIndicator === props.showsHorizontalScrollIndicator &&
+                    this.props.showsVerticalScrollIndicator === props.showsVerticalScrollIndicator) {
+                    // No need to re-create the scrollbar.
+                    return;
+                }
+                this._customScrollbar.dispose();
+                this._customScrollbar = undefined;
+            }
+
+            let element = ReactDOM.findDOMNode(this) as HTMLElement;
+            if (element) {
+                this._customScrollbar = new CustomScrollbar(element);
+                const horizontalHidden = (props.horizontal && props.showsHorizontalScrollIndicator === false);
+                const verticalHidden = (props.vertical && props.showsVerticalScrollIndicator === false);
+                this._customScrollbar.init({
+                    horizontal: props.horizontal && !horizontalHidden,
+                    vertical: props.vertical && !verticalHidden,
+                    hiddenScrollbar: horizontalHidden || verticalHidden
+                });
+            }
+        }
     }
 
     private _getContainerStyle(): Types.ScrollViewStyleRuleSet {
@@ -302,7 +329,7 @@ export class ScrollView extends ViewBase<Types.ScrollViewProps, {}> implements R
                 var position = this._easeInOut(elapsedTime, start, change, duration);
                 container.scrollTop = position;
                 if (elapsedTime < duration) {
-                    window.setTimeout(function() {
+                    setTimeout(function() {
                         animateScroll(elapsedTime);
                     }, increment);
                 }
@@ -331,7 +358,7 @@ export class ScrollView extends ViewBase<Types.ScrollViewProps, {}> implements R
                 var position = this._easeInOut(elapsedTime, start, change, duration);
                 container.scrollLeft = position;
                 if (elapsedTime < duration) {
-                    window.setTimeout(function() {
+                    setTimeout(function() {
                         animateScroll(elapsedTime);
                     }, increment);
                 }

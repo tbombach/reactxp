@@ -47,7 +47,7 @@ export function executeTransition(element: HTMLElement, transitions: ITransition
         getComputedStyle(element).opacity;
 
         // TODO: Cross-browser equivalent of 'transition' style (e.g. vendor prefixed).
-        cssTransitions.push(duration + 'ms ' + property + ' ' + timing + ' ' + delay + 'ms');
+        cssTransitions.push(property + ' ' + duration + 'ms ' + timing + ' ' + delay + 'ms');
     });
 
     element.style.transition = cssTransitions.join(', ');
@@ -69,35 +69,40 @@ export function executeTransition(element: HTMLElement, transitions: ITransition
         if (!didFinish) {
             clearTimeout(timeoutId);
 
-            // TODO: Cross-browser equivalent of 'transitionEnd' event (e.g. vendor prefixed).
-            element.removeEventListener('webkitTransitionEnd', onTransitionEnd);
-            element.removeEventListener('transitionEnd', onTransitionEnd);
-
-            // Only clean the transition if we are ending the same transition it was initially set.
-            // There are cases where transitions may be overriden before the transition before ends.
+            // Only complete the transition if we are ending the same transition it was initially set.
+            // There are cases where transitions may be overriden before the transition ends.
             if (element.dataset['transitionId'] === timeoutId.toString()) {
+                // TODO: Cross-browser equivalent of 'transitionEnd' event (e.g. vendor prefixed).
+                element.removeEventListener('webkitTransitionEnd', onTransitionEnd);
+                element.removeEventListener('transitionEnd', onTransitionEnd);
+
                 delete element.dataset['transitionId'];
                 element.style.transition = 'none';
-            }
 
-            didFinish = true;
-            done();
+                didFinish = true;
+                done();
+            }
         }
     };
 
     // Watchdog timeout for cases where transitionEnd event doesn't fire.
-    timeoutId = window.setTimeout(finish, longestDurationPlusDelay + 10);
+    timeoutId = setTimeout(function () {
+        // If the item was removed from the DOM (which can happen if a
+        // rerender occurred), don't bother finishing. We don't want to do
+        // this in the transition event finish path because it's expensive
+        // and unnecessary in that case because the transition event
+        // implies that the element is still in the DOC
+        if (document.body.contains(element)) {
+            finish();
+        }
+    }, longestDurationPlusDelay + 10);
     element.dataset['transitionId'] = timeoutId.toString();
 
-    // On webkit browsers, we need to defer the setting of the actual properties
-    // for some reason.
-    _.defer(() => {
-        // Set the "to" values.
-        _.each(transitions, (transition: ITransitionSpec) => {
-            const property = transition.property;
-            const to = transition.to;
-            (element.style as any)[property] = to;
-        });
+    // Set the "to" values.
+    _.each(transitions, (transition: ITransitionSpec) => {
+        const property = transition.property;
+        const to = transition.to;
+        (element.style as any)[property] = to;
     });
 }
 

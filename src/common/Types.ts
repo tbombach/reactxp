@@ -350,7 +350,6 @@ export type ComponentBase = React.Component<any, any>;
 export interface CommonProps {
     ref?: string | ((obj: ComponentBase | null) => void);
     key?: string | number;
-    type?: any;
     children?: ReactNode | ReactNode[];
 }
 
@@ -368,6 +367,7 @@ export interface CommonAccessibilityProps {
 
     // Desktop only.
     tabIndex?: number;
+    ariaValueNow?: number;
 
     // iOS only.
     accessibilityActions?: string[];
@@ -383,17 +383,7 @@ export enum ImportantForAccessibility {
     NoHideDescendants
 }
 
-export interface AccessibilityHtmlAttributes extends React.HTMLAttributes<any> {
-    'aria-label'?: string;
-    'aria-live'?: string;
-    'aria-hidden'?: boolean;
-    'aria-disabled'?: boolean;
-    'aria-selected'?: boolean;
-    'aria-checked'?: boolean;
-    'aria-haspopup'?: boolean;
-    'aria-controls'?: string;
-    'aria-labelledby'?: string;
-}
+export type AriaLive = 'off' | 'assertive' | 'polite';
 
 // Android & Desktop supported prop, which allows screen-reader to inform its users when a
 // component has dynamically changed. For example, the content of an inApp toast.
@@ -452,6 +442,7 @@ export enum AccessibilityTrait {
     Dialog,
     HasPopup,
     Option,
+    Switch,
 
     // Desktop & mobile. This is at the end because this
     // is the highest priority trait.
@@ -469,7 +460,7 @@ export interface ButtonProps extends CommonStyledProps<ButtonStyleRuleSet>, Comm
     delayLongPress?: number;
 
     onAccessibilityTapIOS?: Function; // iOS-only prop, call when a button is double tapped in accessibility mode
-    onContextMenu?: (e: SyntheticEvent) => void;
+    onContextMenu?: (e: MouseEvent) => void;
     onPress?: (e: SyntheticEvent) => void;
     onPressIn?: (e: SyntheticEvent) => void;
     onPressOut?: (e: SyntheticEvent) => void;
@@ -562,7 +553,7 @@ export interface TextPropsShared extends CommonProps {
     onPress?: (e: SyntheticEvent) => void;
 
     id?: string; // Web only. Needed for accessibility.
-    onContextMenu?: (e: SyntheticEvent) => void;
+    onContextMenu?: (e: MouseEvent) => void;
 }
 
 export interface TextProps extends TextPropsShared {
@@ -575,6 +566,16 @@ export interface AnimatedTextProps extends TextPropsShared {
 
 export type ViewLayerType = 'none' | 'software' | 'hardware';
 
+export enum LimitFocusType {
+    Unlimited = 0,
+    // When limitFocusWithin=Limited, the View and the focusable components inside
+    // the View get both tabIndex=-1 and aria-hidden=true.
+    Limited = 1,
+    // When limitFocusWithin=Accessible, the View and the focusable components inside
+    // the View get only tabIndex=-1.
+    Accessible = 2
+}
+
 // View
 export interface ViewPropsShared extends CommonProps, CommonAccessibilityProps {
     title?: string;
@@ -584,11 +585,12 @@ export interface ViewPropsShared extends CommonProps, CommonAccessibilityProps {
     viewLayerTypeAndroid?: ViewLayerType; // Android only property
 
     restrictFocusWithin?: boolean; // Web-only, during the keyboard navigation, the focus will not go outside this view
-    limitFocusWithin?: boolean; // Web-only, make the view and all focusable subelements not focusable when isFocusLimited state is true
+    limitFocusWithin?: LimitFocusType; // Web-only, make the view and all focusable subelements not focusable
 
     importantForLayout?: boolean; // Web-only, additional invisible DOM elements will be added to track the size changes faster
     id?: string; // Web-only. Needed for accessibility.
     ariaLabelledBy?: string; // Web-only. Needed for accessibility.
+    ariaRoleDescription?: string; // Web-only. Needed for accessibility.
     accessibilityLiveRegion?: AccessibilityLiveRegion; // Android and web only
 
     // There are a couple of constraints when child animations are enabled:
@@ -619,11 +621,8 @@ export interface ViewPropsShared extends CommonProps, CommonAccessibilityProps {
     disableTouchOpacityAnimation?: boolean;
     activeOpacity?: number;
     underlayColor?: string;
-}
 
-export interface ViewProps extends ViewPropsShared {
-    style?:  StyleRuleSetRecursive<ViewStyleRuleSet>;
-    onContextMenu?: (e: SyntheticEvent) => void;
+    onContextMenu?: (e: MouseEvent) => void;
     onStartShouldSetResponder?: (e: SyntheticEvent) => boolean;
     onMoveShouldSetResponder?: (e: SyntheticEvent) => boolean;
     onStartShouldSetResponderCapture?: (e: SyntheticEvent) => boolean;
@@ -636,6 +635,10 @@ export interface ViewProps extends ViewPropsShared {
     onResponderEnd?: (e: TouchEvent) => void;
     onResponderTerminate?: (e: SyntheticEvent) => void;
     onResponderTerminationRequest?: (e: SyntheticEvent) => boolean;
+}
+
+export interface ViewProps extends ViewPropsShared {
+    style?: StyleRuleSetRecursive<ViewStyleRuleSet>;
 }
 
 export interface AnimatedViewProps extends ViewPropsShared {
@@ -868,7 +871,7 @@ export interface TextInputPropsShared extends CommonProps, CommonAccessibilityPr
 
     onKeyPress?: (e: KeyboardEvent) => void;
     onFocus?: (e: FocusEvent) => void;
-    onBlur?: (e: FocusEvent) => void;
+    onBlur?: () => void;
     onPaste?: (e: ClipboardEvent) => void;
     onChangeText?: (newValue: string) => void;
     onSelectionChange?: (start: number, end: number) => void;
@@ -993,6 +996,11 @@ export interface PopupOptions {
     // outside of it. It will still close if the anchor is unmounted or if
     // dismiss is explicitly called.
     preventDismissOnPress?: boolean;
+
+    // The popup may be left in the DOM after it's dismissed. This is a performance optimization to
+    // make the popup appear faster when it's shown again, intended for popups that tend to be shown
+    // repeatedly. Note that this is only a hint, popups cannot be force-cached.
+    cacheable?: boolean;
 
     // Android & iOS only.
     // The id of the root view this popup is associated with.
@@ -1128,24 +1136,35 @@ export type SyntheticEvent = {
     readonly cancelable: boolean;
     readonly defaultPrevented: boolean;
     readonly timeStamp: number;
-    readonly currentTarget: EventTarget;
     readonly nativeEvent: any; // Platform-specific
     preventDefault(): void;
     stopPropagation(): void;
 };
+
 export interface ClipboardEvent extends SyntheticEvent {
     clipboardData: DataTransfer;
 }
+
 export type FocusEvent = SyntheticEvent;
-export type FormEvent = SyntheticEvent;
-export type MouseEvent = SyntheticEvent;
+
+export interface MouseEvent extends SyntheticEvent {
+    altKey: boolean;
+    button: number;
+    clientX: number;
+    clientY: number;
+    ctrlKey: boolean;
+    metaKey: boolean;
+    shiftKey: boolean;
+    pageX?: number;
+    pageY?: number;
+}
+
 export interface DragEvent extends MouseEvent {
     dataTransfer: DataTransfer;
 }
 
 export interface Touch {
     identifier: number;
-    target: EventTarget;
     locationX: number;
     locationY: number;
     screenX: number;
@@ -1169,7 +1188,6 @@ export interface TouchEvent extends SyntheticEvent {
     altKey: boolean;
     changedTouches: TouchList;
     ctrlKey: boolean;
-    getModifierState(key: string): boolean;
     metaKey: boolean;
     shiftKey: boolean;
     targetTouches: TouchList;
@@ -1179,6 +1197,7 @@ export interface TouchEvent extends SyntheticEvent {
     pageY?: number;
     touches: TouchList;
 }
+
 export interface WheelEvent extends SyntheticEvent {
     deltaMode: number;
     deltaX: number;

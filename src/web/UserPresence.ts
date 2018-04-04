@@ -13,7 +13,7 @@ import RX = require('../common/Interfaces');
 // Hack to allow inline-require without importing node.d.ts
 declare var require: (path: string) => any;
 if (typeof(document) !== 'undefined') {
-    var ifvisible = require('ifvisible.js');
+    var ifvisible = require('ifvisible');
 }
 
 export class UserPresence extends RX.UserPresence {
@@ -30,8 +30,9 @@ export class UserPresence extends RX.UserPresence {
             ifvisible.on('focus', this._handleFocus.bind(this));
             ifvisible.on('blur', this._handleBlur.bind(this));
 
-            window.addEventListener('blur', this._handleBlur.bind(this));
-            window.addEventListener('focus', this._handleFocus.bind(this));
+            window.addEventListener('blur', this._handleWindowBlur.bind(this));
+        } else {
+            this._isPresent = false;
         }
     }
 
@@ -66,6 +67,10 @@ export class UserPresence extends RX.UserPresence {
 
     private _handleBlur(): void {
         this._setUserPresent(false);
+    }
+
+    private _handleWindowBlur(): void {
+        ifvisible.idle();
     }
 }
 

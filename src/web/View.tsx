@@ -18,6 +18,7 @@ import restyleForInlineText = require('./utils/restyleForInlineText');
 import Styles from './Styles';
 import Types = require('../common/Types');
 import ViewBase from './ViewBase';
+import { PopupContainer, PopupComponent } from './PopupContainer';
 import { FocusManager, applyFocusableComponentMixin } from './utils/FocusManager';
 
 const _styles = {
@@ -70,36 +71,50 @@ if (typeof document !== 'undefined') {
 export interface ViewContext {
     isRxParentAText?: boolean;
     focusManager?: FocusManager;
+    popupContainer?: PopupContainer;
 }
 
 export class View extends ViewBase<Types.ViewProps, {}> {
     static contextTypes: React.ValidationMap<any> = {
         isRxParentAText: PropTypes.bool,
-        focusManager: PropTypes.object
+        focusManager: PropTypes.object,
+        popupContainer: PropTypes.object
     };
-    context: ViewContext;
+    // Context is provided by super - just re-typing here
+    context!: ViewContext;
 
     static childContextTypes: React.ValidationMap<any> = {
         isRxParentAText: PropTypes.bool.isRequired,
-        focusManager: PropTypes.object
+        focusManager: PropTypes.object,
+        popupContainer: PropTypes.object
     };
 
-    private _focusManager: FocusManager;
-    private _isFocusLimited: boolean;
+    private _focusManager: FocusManager|undefined;
+    private _limitFocusWithin = false;
+    private _isFocusLimited = false;
+    private _isFocusRestricted: boolean|undefined;
 
     private _resizeDetectorAnimationFrame: number|undefined;
     private _resizeDetectorNodes: { grow?: HTMLElement, shrink?: HTMLElement } = {};
 
+    private _popupContainer: PopupContainer|undefined;
+    private _popupToken: PopupComponent|undefined;
+
     constructor(props: Types.ViewProps, context: ViewContext) {
         super(props, context);
 
-        if (props.restrictFocusWithin || props.limitFocusWithin) {
+        this._limitFocusWithin =
+            (props.limitFocusWithin === Types.LimitFocusType.Limited) ||
+            (props.limitFocusWithin === Types.LimitFocusType.Accessible);
+
+        if (props.restrictFocusWithin || this._limitFocusWithin) {
             this._focusManager = new FocusManager(context && context.focusManager);
 
-            if (props.limitFocusWithin) {
+            if (this._limitFocusWithin) {
                 this.setFocusLimited(true);
             }
         }
+        this._popupContainer = context.popupContainer;
     }
 
     private _renderResizeDetectorIfNeeded(containerStyles: any): React.ReactNode|null {
@@ -209,9 +224,12 @@ export class View extends ViewBase<Types.ViewProps, {}> {
             isRxParentAText: false
         };
 
-        // Provide the descendants with the focus manager (if any).
+        // Provide the descendants with the focus manager and popup container (if any).
         if (this._focusManager) {
             childContext.focusManager = this._focusManager;
+        }
+        if (this._popupContainer) {
+            childContext.popupContainer = this._popupContainer;
         }
 
         return childContext;
@@ -219,6 +237,10 @@ export class View extends ViewBase<Types.ViewProps, {}> {
 
     protected _getContainer(): HTMLElement|null {
         return ReactDOM.findDOMNode(this) as HTMLElement;
+    }
+
+    private isHidden(): boolean {
+        return !!this._popupContainer && this._popupContainer.isHidden();
     }
 
     setFocusRestricted(restricted: boolean) {
@@ -229,49 +251,69 @@ export class View extends ViewBase<Types.ViewProps, {}> {
             return;
         }
 
-        if (restricted) {
-            this._focusManager.restrictFocusWithin();
-        } else {
-            this._focusManager.removeFocusRestriction();
+        if (!this.isHidden()) {
+            if (restricted) {
+                this._focusManager.restrictFocusWithin();
+            } else {
+                this._focusManager.removeFocusRestriction();
+            }
         }
+        this._isFocusRestricted = restricted;
     }
 
     setFocusLimited(limited: boolean) {
-        if (!this._focusManager || !this.props.limitFocusWithin) {
+        if (!this._focusManager || !this._limitFocusWithin) {
             if (AppConfig.isDevelopmentMode()) {
-                console.error('View: setFocusLimited method requires limitFocusWithin property to be set to true');
+                console.error('View: setFocusLimited method requires limitFocusWithin property to be set');
             }
             return;
         }
 
-        if (limited && !this._isFocusLimited) {
-            this._isFocusLimited = true;
-            this._focusManager.limitFocusWithin();
-        } else if (!limited && this._isFocusLimited) {
-            this._isFocusLimited = false;
-            this._focusManager.removeFocusLimitation();
+        if (!this.isHidden()) {
+            if (limited && !this._isFocusLimited) {
+                this._focusManager.limitFocusWithin(this.props.limitFocusWithin!!!);
+            } else if (!limited && this._isFocusLimited) {
+                this._focusManager.removeFocusLimitation();
+            }
         }
+        this._isFocusLimited = limited;
     }
 
     render() {
         let combinedStyles = Styles.combine([_styles.defaultStyle, this.props.style]) as any;
-        const ariaRole = AccessibilityUtil.accessibilityTraitToString(this.props.accessibilityTraits);
+        let ariaRole = AccessibilityUtil.accessibilityTraitToString(this.props.accessibilityTraits);
+        const tabIndex = this.props.tabIndex;
         const ariaSelected = AccessibilityUtil.accessibilityTraitToAriaSelected(this.props.accessibilityTraits);
         const isAriaHidden = AccessibilityUtil.isHidden(this.props.importantForAccessibility);
+        const accessibilityLabel = this.props.accessibilityLabel;
+        const ariaLabelledBy = this.props.ariaLabelledBy;
+        const ariaRoleDescription = this.props.ariaRoleDescription;
         const ariaLive = this.props.accessibilityLiveRegion ?
             AccessibilityUtil.accessibilityLiveRegionToString(this.props.accessibilityLiveRegion) :
             undefined;
+        const ariaValueNow = this.props.ariaValueNow;
 
-        let props: Types.AccessibilityHtmlAttributes = {
+        if (!ariaRole && !accessibilityLabel && !ariaLabelledBy && !ariaRoleDescription && !ariaLive &&
+                (ariaSelected === undefined) && (ariaValueNow === undefined) && (tabIndex === undefined)) {
+            // When the accessibility properties are not specified, set role to none.
+            // It tells the screen readers to skip the node, but unlike setting
+            // aria-hidden to true, allows the sub DOM to be processed further.
+            // This signigicantly improves the screen readers performance.
+            ariaRole = 'none';
+        }
+
+        let props: React.HTMLAttributes<any> = {
             role: ariaRole,
-            tabIndex: this.props.tabIndex,
+            tabIndex: tabIndex,
             style: combinedStyles,
             title: this.props.title,
-            'aria-label': this.props.accessibilityLabel,
+            'aria-label': accessibilityLabel,
             'aria-hidden': isAriaHidden,
             'aria-selected': ariaSelected,
-            'aria-labelledby': this.props.ariaLabelledBy,
+            'aria-labelledby': ariaLabelledBy,
+            'aria-roledescription': ariaRoleDescription,
             'aria-live': ariaLive,
+            'aria-valuenow': ariaValueNow,
             onContextMenu: this.props.onContextMenu,
             onMouseEnter: this.props.onMouseEnter,
             onMouseLeave: this.props.onMouseLeave,
@@ -324,41 +366,64 @@ export class View extends ViewBase<Types.ViewProps, {}> {
         super.componentWillReceiveProps(nextProps);
 
         if (AppConfig.isDevelopmentMode()) {
-            if (!!this.props.restrictFocusWithin !== !!nextProps.restrictFocusWithin) {
+            if (this.props.restrictFocusWithin !== nextProps.restrictFocusWithin) {
                 console.error('View: restrictFocusWithin is readonly and changing it during the component life cycle has no effect');
-            } 
-            if (!!this.props.limitFocusWithin !== !!nextProps.limitFocusWithin) {
+            }
+            if (this.props.limitFocusWithin !== nextProps.limitFocusWithin) {
                 console.error('View: limitFocusWithin is readonly and changing it during the component life cycle has no effect');
             }
+        }
+    }
+
+    enableFocusManager() {
+        if (this._focusManager) {
+            if (this.props.restrictFocusWithin && this._isFocusRestricted !== false) {
+                this._focusManager.restrictFocusWithin();
+            }
+
+            if (this._limitFocusWithin && this._isFocusLimited) {
+                this._focusManager.limitFocusWithin(this.props.limitFocusWithin!!!);
+            }
+        }
+    }
+
+    disableFocusManager() {
+        if (this._focusManager) {
+            this._focusManager.release();
         }
     }
 
     componentDidMount() {
         super.componentDidMount();
 
-        if (this._focusManager) {
-            if (this.props.restrictFocusWithin) {
-                this._focusManager.restrictFocusWithin();
-            }
+        // If we are mounted as visible, do our initialization now. If we are hidden, it will
+        // be done later when the popup is shown.
+        if (!this.isHidden()) {
+            this.enableFocusManager();
+        }
 
-            if (this.props.limitFocusWithin && this._isFocusLimited) {
-                this._focusManager.limitFocusWithin();
-            }
+        if (this._focusManager && this._popupContainer) {
+            this._popupToken = this._popupContainer.registerPopupComponent(
+                () => this.enableFocusManager(), () => this.disableFocusManager());
         }
     }
 
     componentWillUnmount() {
         super.componentWillUnmount();
+        this.disableFocusManager();
 
-        if (this._focusManager) {
-            this._focusManager.release();
+        if (this._popupToken) {
+            this._popupContainer!!!.unregisterPopupComponent(this._popupToken);
         }
     }
 }
 
 applyFocusableComponentMixin(View, function (this: View, nextProps?: Types.ViewProps) {
-    let tabIndex = nextProps && ('tabIndex' in nextProps) ? nextProps.tabIndex : this.props.tabIndex;
-    return tabIndex !== undefined && tabIndex !== -1;
+    // VoiceOver with the VoiceOver key combinations (Ctrl+Option+Left/Right) focuses
+    // <div>s when whatever tabIndex is set (even if tabIndex=-1). So, View is focusable
+    // when tabIndex is not undefined.
+    const tabIndex = nextProps && ('tabIndex' in nextProps) ? nextProps.tabIndex : this.props.tabIndex;
+    return tabIndex !== undefined;
 });
 
 export default View;

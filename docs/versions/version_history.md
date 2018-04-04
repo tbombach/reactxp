@@ -16,7 +16,103 @@ A new version of ReactXP will be released a monthly basis (approximately), follo
 
 ### Version History
 
-#### Version 0.51.0-alpha.6 of reactxp
+#### Version 1.1.0-rc.2 of reactxp
+_Released 28 Mar 2018_
+Fixed bug in web implementation of animation where completion callback was called multiple times in some cases.
+
+#### Version 1.1.0-rc.1 of reactxp
+_Released 26 Mar 2018_
+Added support for "cacheable" popups. This is useful for popups that involve many views and are costly to recreate from scratch.
+Fixed keyboard handler in RX.Link, it was defferring to base class only when onPress was defined, and that was wrong.
+Fixed bug in native implementation of TextInput where selection was sometimes lost.
+Fixed TextInput reference for focus control on windows.
+Implemented hidden scroll indicators in web/ScrollView.
+
+#### Version 1.0.2 of reactxp
+_Released 16 Mar 2018_
+Fixed bug in web TextInput implementation that resulted in a console warning with the latest versions of ReactJS.
+Fixed bug in native Button implementation that resulted in corrupted styles.
+Fixed accessibility (screen reader) bug in web implementation.
+
+#### Version 1.0.1 of reactxp
+_Released 5 Mar 2018_
+Moved event handlers from ViewProps to ViewPropsShared so AnimatedView has them too.
+Fixed recent regression in handling of popups in native implementation.
+Events passed to onPress and onLongPress now include touch or mouse coordinates.
+
+#### Version 0.2.9 of reactxp-imagesvg
+#### Version 1.0.16 of reactxp-navigation
+#### Version 0.2.4 of reactxp-video
+#### Version 0.2.4 of reactxp-virtuallistview
+_Released 2 Mar 2018_
+Rebuilt using reactxp 1.0.0 and latest typescript compiler version.
+
+#### Version 1.0.0 of reactxp
+_Released 2 Mar 2018_
+Filled in fields for MouseEvent on web.
+Fixed a few style leaks in web implementation.
+
+#### Version 1.0.0-rc.1 of reactxp
+_Released 28 Feb 2018_
+
+Improved accessibility handling for Button.
+Added select<T>() method to RX.Platform namespace to make it easier to implement platform-specific behavior.
+Improved accessibility performance.
+Improved performance by avoiding triggering synchronous layout on web.
+Fixed behavior of onContextMenu.
+Removed unused "type" field from RX.CommonProps interface.
+Updated typescript compiler to 2.7.2 and enabled strictPropertyInitialization.
+Added ability to set limitFocusWithin without automatically setting aria-hidden=true on web.
+Implemented RX.Linking APIs for Windows UWP platform.
+Removed "currentTarget" from SyntheticEvent.
+Added coordinates/modifiers/button information to MouseEvent definition.
+
+#### Version 1.0.0-alpha.2 of reactxp
+_Released 21 Feb 2018_
+
+Switched to new versioning scheme that's independent of RN.
+Updated default RN dependency from 0.51.x to 0.53.x, although backward compatibility is maintained.
+Added support for numeric keyboards in mobile browsers.
+Fixed announceForAccessibility API for Mac.
+Added MacOS implementation of Button and Animated.
+Added valuenow attribute for slider role support.
+Fixed bug in web implementation of Animated where it wasn't properly managing listener subscriptions when animated styles were added to (or removed from) an animated component.
+Fix random Android crashes when Talkback is enabled.
+Fixed bug in web animation that caused certain CSS properties not to animate correctly because transition was specifying the attribute using camel case rather than CSS (hyphenated) case. This affected attributes like "backgroundColor".
+Removed parameter from onBlur event.
+Fixed bug in RX.TextInput that affected Windows version: Pass selection in render only after explicitly set.
+Added right-click support for Windows platform.
+Added more accessibility support for Windows platform.
+Use white-space:pre for the aria-live region.
+
+#### Version 0.51.1 of reactxp
+_Released 19 Jan 2018_
+
+Fixed regression in native implementation of Animated.View's blur() method.
+
+#### Version 0.2.3 of reactxp-video
+#### Version 1.0.15 of reactxp-navigator
+#### Version 0.2.8 of reactxp-imagesvg
+#### Version 0.1.7 of reactxp-virtuallistview
+_Released 18 Jan 2018_
+
+Updated for RN 0.51 compatibility.
+
+
+#### Version 0.51.0 of reactxp
+_Released 18 Jan 2018_
+
+Fixed focusable View condition for VoiceOver in web implementation.
+Exposed web-specific ariaRoleDescription prop to work around other VoiceOver issues.
+Updated RN for Windows UWP dependency.
+Fixed recent regression that broke focus and blur calls in iOS and Android implementations of AnimatedTextInput.
+
+#### Version 0.51.0-alpha.9 of reactxp
+_Released 17 Jan 2018_
+
+Removed console error related to animations of values not currently associated with any mounted component. It was too noisy.
+
+#### Version 0.51.0-alpha.8 of reactxp
 _Released 16 Jan 2018_
 
 Fixed bug in Windows UWP implementation related to selection ranges in TextInput.
@@ -24,6 +120,9 @@ Fixed screen reader issue in Mac implementation.
 Removed ```textAlign``` prop from TextInput. It was extraneous, since it's already supported as a style attribute.
 Updated Windows UWP dependency to use the latest version of RN for UWP.
 Worked around issue with screen readers on Chrome browsers.
+Added currentTarget field back to SyntheticEvent.
+Added support for "switch" aria type (web implementation).
+Fixed recent regression in web animation code.
 
 #### Version 0.51.0-alpha.5 of reactxp
 _Released 11 Jan 2018_

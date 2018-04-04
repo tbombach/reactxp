@@ -15,6 +15,7 @@ import PropTypes = require('prop-types');
 import AccessibilityUtil from './AccessibilityUtil';
 import Animated from './Animated';
 import AppConfig from '../common/AppConfig';
+import EventHelpers from './utils/EventHelpers';
 import Styles from './Styles';
 import Types = require('../common/Types');
 import { isEqual } from '../common/lodashMini';
@@ -71,15 +72,18 @@ export class Button extends React.Component<Types.ButtonProps, {}> {
     private _mixin_componentDidMount = RN.Touchable.Mixin.componentDidMount || noop;
     private _mixin_componentWillUnmount = RN.Touchable.Mixin.componentWillUnmount || noop;
 
-    touchableGetInitialState: () => RN.Touchable.State;
-    touchableHandleStartShouldSetResponder: () => boolean;
-    touchableHandleResponderTerminationRequest: () => boolean;
-    touchableHandleResponderGrant: (e: React.SyntheticEvent<any>) => void;
-    touchableHandleResponderMove: (e: React.SyntheticEvent<any>) => void;
-    touchableHandleResponderRelease: (e: React.SyntheticEvent<any>) => void;
-    touchableHandleResponderTerminate: (e: React.SyntheticEvent<any>) => void;
+    // These are provided by mixin applied in the constructor
+    touchableGetInitialState!: () => RN.Touchable.State;
+    touchableHandleStartShouldSetResponder!: () => boolean;
+    touchableHandleResponderTerminationRequest!: () => boolean;
+    touchableHandleResponderGrant!: (e: React.SyntheticEvent<any>) => void;
+    touchableHandleResponderMove!: (e: React.SyntheticEvent<any>) => void;
+    touchableHandleResponderRelease!: (e: React.SyntheticEvent<any>) => void;
+    touchableHandleResponderTerminate!: (e: React.SyntheticEvent<any>) => void;
 
     private _isMounted = false;
+    protected _isMouseOver = false;
+    protected _isHoverStarted = false;
     private _hideTimeout: number|undefined;
     private _buttonElement: RN.Animated.View|null = null;
     private _defaultOpacityValue: number|undefined;
@@ -119,7 +123,7 @@ export class Button extends React.Component<Types.ButtonProps, {}> {
         const importantForAccessibility = AccessibilityUtil.importantForAccessibilityToString(this.props.importantForAccessibility,
             _defaultImportantForAccessibility);
         const accessibilityTrait = AccessibilityUtil.accessibilityTraitToString(this.props.accessibilityTraits,
-             _defaultAccessibilityTrait);
+             _defaultAccessibilityTrait, true);
         const accessibilityComponentType = AccessibilityUtil.accessibilityComponentTypeToString(this.props.accessibilityTraits,
             _defaultAccessibilityTrait);
 
@@ -140,7 +144,9 @@ export class Button extends React.Component<Types.ButtonProps, {}> {
             onResponderRelease: this.touchableHandleResponderRelease,
             onResponderTerminate: this.touchableHandleResponderTerminate,
             shouldRasterizeIOS: this.props.shouldRasterizeIOS,
-            onAccessibilityTapIOS: this.props.onAccessibilityTapIOS
+            onAccessibilityTapIOS: this.props.onAccessibilityTapIOS,
+            onMouseEnter: this._onMouseEnter,
+            onMouseLeave: this._onMouseLeave
         };
 
         return this._render(internalProps);
@@ -213,16 +219,24 @@ export class Button extends React.Component<Types.ButtonProps, {}> {
         }
     }
 
-    touchableHandlePress = (e: Types.MouseEvent) => {
+    touchableHandlePress = (e: Types.SyntheticEvent) => {
         UserInterface.evaluateTouchLatency(e);
-        if (!this.props.disabled && this.props.onPress) {
-            this.props.onPress(e);
+        if (!this.props.disabled) {
+            if (EventHelpers.isRightMouseButton(e)) {
+                if (this.props.onContextMenu) {
+                    this.props.onContextMenu(EventHelpers.toMouseEvent(e));
+                }
+            } else {
+                if (this.props.onPress) {
+                    this.props.onPress(EventHelpers.toMouseEvent(e));
+                }
+            }
         }
     }
 
-    touchableHandleLongPress = (e: Types.MouseEvent) => {
-        if (!this.props.disabled && this.props.onLongPress) {
-            this.props.onLongPress(e);
+    touchableHandleLongPress = (e: Types.SyntheticEvent) => {
+        if (!this.props.disabled && !EventHelpers.isRightMouseButton(e) && this.props.onLongPress) {
+            this.props.onLongPress(EventHelpers.toMouseEvent(e));
         }
     }
 
@@ -276,6 +290,36 @@ export class Button extends React.Component<Types.ButtonProps, {}> {
         }
 
         return flattenedStyles && (flattenedStyles as Types.ButtonStyle).opacity || 1;
+    }
+
+    protected _onMouseEnter = (e: Types.SyntheticEvent) => {
+        this._isMouseOver = true;
+        this._onHoverStart(e);
+    }
+
+    protected _onMouseLeave = (e: Types.SyntheticEvent) => {
+        this._isMouseOver = false;
+        this._onHoverEnd(e);
+    }
+
+    protected _onHoverStart = (e: Types.SyntheticEvent) => {
+        if (!this._isHoverStarted && this._isMouseOver) {
+            this._isHoverStarted = true;
+
+            if (this.props.onHoverStart) {
+                this.props.onHoverStart(e);
+            }
+        }
+    }
+
+    protected _onHoverEnd = (e: Types.SyntheticEvent) => {
+        if (this._isHoverStarted && !this._isMouseOver) {
+            this._isHoverStarted = false;
+
+            if (this.props.onHoverEnd) {
+                this.props.onHoverEnd(e);
+            }
+        }
     }
 
     /**

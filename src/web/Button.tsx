@@ -61,7 +61,7 @@ export class Button extends React.Component<Types.ButtonProps, {}> {
         hasRxButtonAscendant: PropTypes.bool
     };
 
-    private _lastMouseDownEvent: Types.SyntheticEvent;
+    private _lastMouseDownEvent: Types.SyntheticEvent|undefined;
     private _ignoreClick = false;
     private _longPressTimer: number|undefined;
     private _isMouseOver = false;
@@ -145,31 +145,30 @@ export class Button extends React.Component<Types.ButtonProps, {}> {
     }
 
     private _getStyles(): Types.ButtonStyleRuleSet {
+        let buttonStyleMutations: Types.ButtonStyle = {};
         let buttonStyles = Styles.combine(this.props.style) as any;
 
-        // Specify default syle for padding only if padding is not already specified
+        // Specify default style for padding only if padding is not already specified
         if (buttonStyles && buttonStyles.padding === undefined  &&
                 buttonStyles.paddingRight === undefined && buttonStyles.paddingLeft === undefined &&
                 buttonStyles.paddingBottom === undefined && buttonStyles.paddingTop === undefined  &&
                 buttonStyles.paddingHorizontal === undefined && buttonStyles.paddingVertical === undefined) {
-            buttonStyles['padding'] = '0';
+            buttonStyleMutations.padding = 0;
         }
 
-        let combinedStyles = Styles.combine([_styles.defaultButton, buttonStyles]);
-
         if (this.props.disabled) {
-            combinedStyles.opacity = 0.5;
+            buttonStyleMutations.opacity = 0.5;
         }
 
         // Default to 'pointer' cursor for enabled buttons unless otherwise specified.
-        if (!combinedStyles['cursor']) {
-            combinedStyles['cursor'] = this.props.disabled ? 'default' : 'pointer';
+        if (!buttonStyleMutations.cursor) {
+            buttonStyleMutations.cursor = this.props.disabled ? 'default' : 'pointer';
         }
 
-        return combinedStyles;
+        return Styles.combine([_styles.defaultButton, buttonStyles, buttonStyleMutations]);
     }
 
-    private _onContextMenu = (e: Types.SyntheticEvent) => {
+    private _onContextMenu = (e: React.MouseEvent<any>) => {
         if (this.props.onContextMenu) {
             this.props.onContextMenu(e);
         }
@@ -184,10 +183,15 @@ export class Button extends React.Component<Types.ButtonProps, {}> {
             this._lastMouseDownEvent = e;
             e.persist();
 
-            this._longPressTimer = window.setTimeout(() => {
+            // In the unlikely event we get 2 mouse down events, clear existing timer
+            if (this._longPressTimer) {
+                clearTimeout(this._longPressTimer);
+            }
+            this._longPressTimer = setTimeout(() => {
                 this._longPressTimer = undefined;
                 if (this.props.onLongPress) {
-                    this.props.onLongPress(this._lastMouseDownEvent);
+                    // lastMouseDownEvent can never be undefined at this point
+                    this.props.onLongPress(this._lastMouseDownEvent!!!);
                     this._ignoreClick = true;
                 }
             }, _longPressTime);
@@ -200,7 +204,7 @@ export class Button extends React.Component<Types.ButtonProps, {}> {
         }
 
         if (this._longPressTimer) {
-            window.clearTimeout(this._longPressTimer);
+            clearTimeout(this._longPressTimer);
         }
     }
 

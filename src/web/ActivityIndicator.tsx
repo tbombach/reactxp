@@ -646,6 +646,7 @@ export class ActivityIndicator extends React.Component<Types.ActivityIndicatorPr
         }
 
         head.appendChild(style);
+        ActivityIndicator._isStyleSheetInstalled = true;
     }
 
     constructor(props: Types.ActivityIndicatorProps) {
@@ -660,7 +661,7 @@ export class ActivityIndicator extends React.Component<Types.ActivityIndicatorPr
         this._isMounted = true;
 
         if (this.props.deferTime && this.props.deferTime > 0) {
-            window.setTimeout(() => {
+            setTimeout(() => {
                 if (this._isMounted) {
                     this.setState({ isVisible: true });
                 }

@@ -1,5 +1,5 @@
-﻿/**
-* Scrollbar.ts
+/**
+* CustomScrollbar.ts
 *
 * Copyright (c) Microsoft Corporation. All rights reserved.
 * Licensed under the MIT license.
@@ -14,7 +14,6 @@ import React = require('react');
 var UNIT = 'px';
 var SCROLLER_MIN_SIZE = 15;
 var SCROLLER_NEGATIVE_MARGIN = 30;
-var LTR_OVERRIDE_CLASS = 'ltroverride';
 var NEUTRAL_OVERRIDE_CLASS = 'neutraloverride';
 
 interface IScrollbarInfo {
@@ -31,6 +30,7 @@ interface IScrollbarInfo {
 export interface ScrollbarOptions {
     horizontal?: boolean;
     vertical?: boolean;
+    hiddenScrollbar?: boolean;
 }
 
 var _nativeSrollBarWidth: number = -1;
@@ -160,12 +160,14 @@ export class Scrollbar {
     private _container: HTMLElement;
     private _verticalBar: IScrollbarInfo = {};
     private _horizontalBar: IScrollbarInfo = {};
-    private _viewport: HTMLElement;
+    // Viewport will always be initialized before it's used
+    private _viewport!: HTMLElement;
     private _dragging = false;
-    private _dragIsVertical: boolean;
+    private _dragIsVertical = false;
     private _scrollingVisible = false;
     private _hasHorizontal = false;
     private _hasVertical = true;
+    private _hasHiddenScrollbar = false;
     private _stopDragCallback = this._stopDrag.bind(this);
     private _startDragVCallback = this._startDrag.bind(this, true);
     private _startDragHCallback = this._startDrag.bind(this, false);
@@ -173,6 +175,7 @@ export class Scrollbar {
     private _handleWheelCallback = this._handleWheel.bind(this);
     private _handleMouseDownCallback = this._handleMouseDown.bind(this);
     private _updateCallback = this.update.bind(this);
+    private _asyncInitTimer: number|undefined;
 
     static getNativeScrollbarWidth() {
         // Have we cached the value alread?
@@ -230,6 +233,7 @@ export class Scrollbar {
         }
 
         head.appendChild(style);
+        _isStyleSheetInstalled = true;
     }
 
     constructor(container: HTMLElement) {
@@ -253,12 +257,8 @@ export class Scrollbar {
             isNeutral = isLeftBound && isRightBound;
 
         this._container.classList.remove(NEUTRAL_OVERRIDE_CLASS);
-        this._container.classList.remove(LTR_OVERRIDE_CLASS);
-
         if (isNeutral) {
             this._container.classList.add(NEUTRAL_OVERRIDE_CLASS);
-        } else if (isLeftBound) {
-            this._container.classList.add(LTR_OVERRIDE_CLASS);
         }
 
         rtlbox.innerHTML = '';
@@ -338,14 +338,14 @@ export class Scrollbar {
 
         if (this._hasVertical) {
             const eventOffsetY = e.pageY - target.getBoundingClientRect().top;
-            const halfHeight = this._verticalBar.slider!!!.offsetHeight / 2; 
+            const halfHeight = this._verticalBar.slider!!!.offsetHeight / 2;
             const offsetY = (eventOffsetY - this._verticalBar.slider!!!.offsetTop - halfHeight) * this._verticalBar.slider2Scroll!!!;
             this._viewport.scrollTop = offsetY + this._viewport.scrollTop;
         }
-        
+
         if (this._hasHorizontal) {
             const eventOffsetX = e.pageX - target.getBoundingClientRect().left;
-            const halfWidth = this._horizontalBar.slider!!!.offsetWidth / 2; 
+            const halfWidth = this._horizontalBar.slider!!!.offsetWidth / 2;
             const offsetX = (eventOffsetX - this._horizontalBar.slider!!!.offsetLeft - halfWidth) * this._horizontalBar.slider2Scroll!!!;
             this._viewport.scrollLeft = offsetX + this._viewport.scrollLeft;
         }
@@ -435,7 +435,7 @@ export class Scrollbar {
     }
 
     private _calcNewBarSize(bar: IScrollbarInfo, newSize: number, newScrollSize: number, hasBoth: boolean) {
-        if (hasBoth) {
+        if (hasBoth || this._hasHiddenScrollbar) {
             newSize -= SCROLLER_NEGATIVE_MARGIN;
             newScrollSize -= SCROLLER_NEGATIVE_MARGIN - Scrollbar.getNativeScrollbarWidth();
         }
@@ -503,22 +503,35 @@ export class Scrollbar {
 
     init(options?: ScrollbarOptions) {
         if (options) {
-            this._hasHorizontal = options.horizontal!!!;
+            this._hasHorizontal = !!options.horizontal;
 
             // Only if vertical is explicitly false as opposed to null, set it to false (default is true)
             if (options.vertical === false) {
                 this._hasVertical = options.vertical;
             }
+
+            // Our container may be scrollable even if the corresponding scrollbar is hidden (i.e. vertical
+            // or horizontal is false). We have to take it into account when calculating scroll bar sizes.
+            this._hasHiddenScrollbar = !!options.hiddenScrollbar;
         }
         Scrollbar._installStyleSheet();
-        this._tryLtrOverride();
         this._addScrollbars();
         this.show();
-        this.update();
         this._container.addEventListener('mouseenter', this._updateCallback);
+
+        // Defer remaining init work to avoid triggering sync layout
+        this._asyncInitTimer = setTimeout(() => {
+            this._asyncInitTimer = undefined;
+            this._tryLtrOverride();
+            this.update();
+        }, 0);
     }
 
     dispose() {
+        if (this._asyncInitTimer) {
+            clearInterval(this._asyncInitTimer);
+            this._asyncInitTimer = undefined;
+        }
         this._stopDrag();
         this._container.removeEventListener('mouseenter', this._updateCallback);
         this.hide();

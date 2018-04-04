@@ -27,33 +27,19 @@ UserInterface.keyboardNavigationEvent.subscribe(isNavigatingWithKeyboard => {
    _isNavigatingWithKeyboard = isNavigatingWithKeyboard;
 });
 
-// Simple check for the presence of the updated React Native for Windows
-const HasFocusableWindows = (RNW.createFocusableComponent !== undefined);
-
-let FocusableAnimatedView: RNW.FocusableComponentConstructor<RN.ViewProps>;
-if (HasFocusableWindows) {
-    FocusableAnimatedView = RNW.createFocusableComponent(RN.Animated.View) as
-        RNW.FocusableComponentConstructor<RN.ViewProps>;
-}
+let FocusableAnimatedView = RNW.createFocusableComponent(RN.Animated.View);
 
 export class Button extends ButtonBase implements FocusManagerFocusableComponent {
 
     private _focusableElement : RNW.FocusableWindows<RN.ViewProps> | null = null;
 
-    private _isMouseOver = false;
     private _isFocusedWithKeyboard = false;
-    private _isHoverStarted = false;
 
     private _onFocusableRef = (btn: RNW.FocusableWindows<RN.ViewProps> | null): void => {
         this._focusableElement = btn;
     }
 
     protected _render(internalProps: RN.ViewProps): JSX.Element {
-        // Fallback to native-common fast if the keyboard enabled component is not available
-        if (!HasFocusableWindows) {
-            return super._render(internalProps);
-        }
-
         // RNW.FocusableProps tabIndex: default is 0.
         // -1 has no special semantic similar to DOM.
         let tabIndex: number | undefined = this.getTabIndex();
@@ -84,7 +70,8 @@ export class Button extends ButtonBase implements FocusManagerFocusableComponent
             onKeyDown: this._onKeyDown,
             onKeyUp: this._onKeyUp,
             onFocus: this._onFocus,
-            onBlur: this._onBlur
+            onBlur: this._onBlur,
+            onAccessibilityTap: this._onAccessibilityTap
         };
 
         return (
@@ -120,6 +107,14 @@ export class Button extends ButtonBase implements FocusManagerFocusableComponent
         }
     }
 
+    private _onAccessibilityTap = (e: React.SyntheticEvent<any>): void => {
+        if (!this.props.disabled) {
+            if (this.props.onPress) {
+                this.props.onPress(e);
+            }
+        }
+    }
+
     private _onKeyDown = (e: React.SyntheticEvent<any>): void => {
         if (!this.props.disabled) {
             let keyEvent = EventHelpers.toKeyboardEvent(e);
@@ -146,16 +141,6 @@ export class Button extends ButtonBase implements FocusManagerFocusableComponent
         }
     }
 
-    private _onMouseEnter = (e: React.SyntheticEvent<any>) => {
-        this._isMouseOver = true;
-        this._onHoverStart(e);
-    }
-
-    private _onMouseLeave = (e: React.SyntheticEvent<any>) => {
-        this._isMouseOver = false;
-        this._onHoverEnd(e);
-    }
-
     // When we get focus on an element, show the hover effect on the element.
     // This ensures that users using keyboard also get the similar experience as mouse users for accessibility.
     private _onFocus = (e: React.SyntheticEvent<any>): void => {
@@ -180,7 +165,7 @@ export class Button extends ButtonBase implements FocusManagerFocusableComponent
         }
     }
 
-    private _onHoverStart = (e: React.SyntheticEvent<any>) => {
+    protected _onHoverStart = (e: React.SyntheticEvent<any>) => {
         if (!this._isHoverStarted && (this._isMouseOver || this._isFocusedWithKeyboard)) {
             this._isHoverStarted = true;
 
@@ -190,7 +175,7 @@ export class Button extends ButtonBase implements FocusManagerFocusableComponent
         }
     }
 
-    private _onHoverEnd = (e: React.SyntheticEvent<any>) => {
+    protected _onHoverEnd = (e: React.SyntheticEvent<any>) => {
         if (this._isHoverStarted && !this._isMouseOver && !this._isFocusedWithKeyboard) {
             this._isHoverStarted = false;
 

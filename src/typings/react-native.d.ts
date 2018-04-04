@@ -34,7 +34,7 @@ declare module 'react-native' {
     interface SyntheticEvent<T> extends React.SyntheticEvent<T> {}
 
     function isValidElement(object: {}): boolean;
-    function findNodeHandle(componentOrHandle: any): number;
+    function findNodeHandle(componentOrHandle: any): number | null;
 
     var Children: React.ReactChildren;
 
@@ -238,7 +238,7 @@ declare module 'react-native' {
     interface CommonAccessibilityProps {
         accessibilityLabel?              : string;
         accessible?                      : boolean;
-        onAcccessibilityTap?             : Function;
+        onAccessibilityTap?              : Function;
 
         // android
         accessibilityComponentType?    : string; //enum ( 'none', 'button', 'radiobutton_checked', 'radiobutton_unchecked' )
@@ -366,7 +366,7 @@ declare module 'react-native' {
         editable?: boolean;
         keyboardType?: string; // enum("default", 'numeric', 'email-address', "ascii-capable", 'numbers-and-punctuation', 'url', 'number-pad', 'phone-pad', 'name-phone-pad', 'decimal-pad', 'twitter', 'web-search')
         multiline?: boolean;
-        onBlur?: ((e: React.FocusEvent<TextInput>) => void);
+        onBlur?: (() => void);
         onKeyPress?: (e: SyntheticEvent<TextInput>) => void;
         onChange?: Function;
         onChangeText?: ((changedText: string) => void);
@@ -632,8 +632,10 @@ declare module 'react-native' {
         static flatten: (s: StyleSheet) => { [key: string]: any };
     }
 
+    type ComponentProvider = () => React.ComponentType<any>;
+
     class AppRegistry {
-        static registerComponent(appKey: string, getComponentFunc: Function): any;
+        static registerComponent(appKey: string, getComponentFunc: ComponentProvider): any;
     }
 
    type  CameraRollProps = {

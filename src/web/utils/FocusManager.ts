@@ -7,13 +7,11 @@
 * Manages focusable elements for better keyboard navigation (web version)
 */
 
-import React = require('react');
 import ReactDOM = require('react-dom');
 
 import { FocusManager as FocusManagerBase,
     FocusableComponentInternal,
-    StoredFocusableComponent,
-    OriginalAttributeValues } from '../../common/utils/FocusManager';
+    StoredFocusableComponent } from '../../common/utils/FocusManager';
 
 import UserInterface from '../UserInterface';
 
@@ -27,10 +25,17 @@ UserInterface.keyboardNavigationEvent.subscribe(isNavigatingWithKeyboard => {
     _isNavigatingWithKeyboard = isNavigatingWithKeyboard;
 });
 
-import { applyFocusableComponentMixin, FocusableComponentStateCallback } from  '../../common/utils/FocusManager';
-export { applyFocusableComponentMixin, FocusableComponentStateCallback };
+import {
+    applyFocusableComponentMixin as applyFocusableComponentMixinCommon,
+    FocusableComponentStateCallback
+} from  '../../common/utils/FocusManager';
+
+export { FocusableComponentStateCallback };
 
 export class FocusManager extends FocusManagerBase {
+    private static _setTabIndexTimer: number|undefined;
+    private static _setTabIndexElement: HTMLElement|undefined;
+    private static _lastFocusedProgrammatically: HTMLElement|undefined;
 
     constructor(parent: FocusManager | undefined) {
         super(parent);
@@ -99,18 +104,35 @@ export class FocusManager extends FocusManagerBase {
     protected /* static */ focusComponent(component: FocusableComponentInternal): boolean {
         const el = ReactDOM.findDOMNode(component) as HTMLElement;
         if (el && el.focus) {
+            FocusManager.setLastFocusedProgrammatically(el);
             el.focus();
             return true;
         }
         return false;
     }
 
+    static setLastFocusedProgrammatically(element: HTMLElement|undefined) {
+        this._lastFocusedProgrammatically = element;
+    }
+
+    static getLastFocusedProgrammatically(reset?: boolean): HTMLElement|undefined {
+        const ret = FocusManager._lastFocusedProgrammatically;
+        if (ret && reset) {
+            FocusManager._lastFocusedProgrammatically = undefined;
+        }
+        return ret;
+    }
+
     static focusFirst(last?: boolean) {
         const focusable = Object.keys(FocusManager._allFocusableComponents)
             .map(componentId => FocusManager._allFocusableComponents[componentId])
-            .filter(storedComponent => !storedComponent.removed && !storedComponent.restricted && !storedComponent.limitedCount)
+            .filter(storedComponent =>
+                !storedComponent.removed &&
+                !storedComponent.restricted &&
+                storedComponent.limitedCount === 0 &&
+                storedComponent.limitedCountAccessible === 0)
             .map(storedComponent => ReactDOM.findDOMNode(storedComponent.component) as HTMLElement)
-            .filter(el => el && el.focus);
+            .filter(el => el && el.focus && ((el.tabIndex || 0) >= 0));
 
         if (focusable.length) {
             focusable.sort((a, b) => {
@@ -122,7 +144,9 @@ export class FocusManager extends FocusManagerBase {
                 return a.compareDocumentPosition(b) & document.DOCUMENT_POSITION_PRECEDING ? 1 : -1;
             });
 
-            focusable[last ? focusable.length - 1 : 0].focus();
+            const elementToFocus = focusable[last ? focusable.length - 1 : 0];
+            FocusManager.setLastFocusedProgrammatically(elementToFocus);
+            elementToFocus.focus();
         }
     }
 
@@ -157,51 +181,98 @@ export class FocusManager extends FocusManagerBase {
             // In order to avoid losing this first Tab press, we're making <body>
             // focusable, focusing it, removing the focus and making it unfocusable
             // back again.
-            const prevTabIndex = FocusManager._setTabIndex(document.body, 0);
-            document.body.focus();
-            document.body.blur();
-            FocusManager._setTabIndex(document.body, prevTabIndex);
+            // Defer the work to avoid triggering sync layout.
+            FocusManager._resetFocusTimer = setTimeout(() => {
+                FocusManager._resetFocusTimer = undefined;
+                const prevTabIndex = FocusManager._setTabIndex(document.body, 0);
+                const activeElement = document.activeElement;
+                FocusManager.setLastFocusedProgrammatically(document.body);
+                document.body.focus();
+                document.body.blur();
+                FocusManager._setTabIndex(document.body, prevTabIndex);
+                if (activeElement instanceof HTMLElement) {
+                    FocusManager.setLastFocusedProgrammatically(activeElement);
+                    activeElement.focus();
+                }
+            }, 0);
         }
     }
 
     protected /* static */  _updateComponentFocusRestriction(storedComponent: StoredFocusableComponent) {
-        if ((storedComponent.restricted || (storedComponent.limitedCount > 0)) && !('origTabIndex' in storedComponent)) {
-            const origValues = FocusManager._setComponentTabIndexAndAriaHidden(storedComponent.component, -1, 'true');
-            storedComponent.origTabIndex = origValues ? origValues.tabIndex : undefined;
-            storedComponent.origAriaHidden = origValues ? origValues.ariaHidden : undefined;
-            FocusManager._callFocusableComponentStateChangeCallbacks(storedComponent, true);
-        } else if (!storedComponent.restricted && !storedComponent.limitedCount && ('origTabIndex' in storedComponent)) {
-            FocusManager._setComponentTabIndexAndAriaHidden(storedComponent.component,
-                    storedComponent.origTabIndex, storedComponent.origAriaHidden);
-            delete storedComponent.origTabIndex;
-            delete storedComponent.origAriaHidden;
-            FocusManager._callFocusableComponentStateChangeCallbacks(storedComponent, false);
+        let newAriaHidden = storedComponent.restricted || (storedComponent.limitedCount > 0) ? true : undefined;
+        let newTabIndex = newAriaHidden || (storedComponent.limitedCountAccessible > 0) ? -1 : undefined;
+        const restrictionRemoved = newTabIndex === undefined;
+
+        if ((storedComponent.curTabIndex !== newTabIndex) || (storedComponent.curAriaHidden !== newAriaHidden)) {
+            const el = ReactDOM.findDOMNode(storedComponent.component) as HTMLElement;
+
+            if (el) {
+                if (storedComponent.curTabIndex !== newTabIndex) {
+                    storedComponent.curTabIndex = newTabIndex;
+
+                    if (restrictionRemoved) {
+                        FocusManager._setTabIndex(el, storedComponent.origTabIndex);
+                    } else {
+                        const prevTabIndex = FocusManager._setTabIndex(el, newTabIndex);
+                        if (!('origTabIndex' in storedComponent)) {
+                            storedComponent.origTabIndex = prevTabIndex;
+                        }
+                    }
+                }
+
+                if (storedComponent.curAriaHidden !== newAriaHidden) {
+                    storedComponent.curAriaHidden = newAriaHidden;
+
+                    if (restrictionRemoved) {
+                        FocusManager._setAriaHidden(el, storedComponent.origAriaHidden);
+                    } else {
+                        const prevAriaHidden = FocusManager._setAriaHidden(el, newAriaHidden ? 'true' : undefined);
+                        if (!('origAriaHidden' in storedComponent)) {
+                            storedComponent.origAriaHidden = prevAriaHidden;
+                        }
+                    }
+                }
+
+                if (restrictionRemoved) {
+                    delete storedComponent.origTabIndex;
+                    delete storedComponent.origAriaHidden;
+                }
+            }
+
+            FocusManager._callFocusableComponentStateChangeCallbacks(storedComponent, !restrictionRemoved);
         }
     }
 
-    private static _setComponentTabIndexAndAriaHidden(
-            component: React.Component<any, any>, tabIndex: number|undefined, ariaHidden: string|undefined)
-            : OriginalAttributeValues|undefined {
-
-        const el = ReactDOM.findDOMNode(component) as HTMLElement;
-        return el ?
-            {
-                tabIndex: FocusManager._setTabIndex(el, tabIndex),
-                ariaHidden: FocusManager._setAriaHidden(el, ariaHidden)
-            }
-            :
-            undefined;
-    }
-
     private static _setTabIndex(element: HTMLElement, value: number|undefined): number|undefined {
-        const prev = element.hasAttribute(ATTR_NAME_TAB_INDEX) ? element.tabIndex : undefined;
+        // If a tabIndex assignment is pending for this element, cancel it now.
+        if (FocusManager._setTabIndexTimer && element === FocusManager._setTabIndexElement) {
+            clearTimeout(FocusManager._setTabIndexTimer);
+            FocusManager._setTabIndexTimer = undefined;
+        }
 
+        const prev = element.hasAttribute(ATTR_NAME_TAB_INDEX) ? element.tabIndex : undefined;
         if (value === undefined) {
             if (prev !== undefined) {
                 element.removeAttribute(ATTR_NAME_TAB_INDEX);
             }
-        } else {
-            element.tabIndex = value;
+        } else if (value !== prev) {
+            // Setting tabIndex to -1 on the active element would trigger sync layout. Defer it.
+            if (value === -1 && element === document.activeElement) {
+                // If a tabIndex assignment is pending for another element, run it now as we know
+                // that it's not active anymore.
+                if (FocusManager._setTabIndexTimer) {
+                    FocusManager._setTabIndexElement!!!.tabIndex = -1;
+                    clearTimeout(FocusManager._setTabIndexTimer);
+                    FocusManager._setTabIndexTimer = undefined;
+                }
+
+                FocusManager._setTabIndexElement = element;
+                FocusManager._setTabIndexTimer = setTimeout(() => {
+                    element.tabIndex = value;
+                }, 0);
+            } else {
+                element.tabIndex = value;
+            }
         }
 
         return prev;
@@ -219,6 +290,23 @@ export class FocusManager extends FocusManagerBase {
         }
 
         return prev;
+    }
+}
+
+export function applyFocusableComponentMixin(Component: any, isConditionallyFocusable?: Function) {
+    applyFocusableComponentMixinCommon(Component, isConditionallyFocusable);
+
+    const origFocus = Component.prototype.focus;
+
+    if (origFocus) {
+        Component.prototype.focus = function () {
+            const el = ReactDOM.findDOMNode(this) as HTMLElement;
+            if (el) {
+                FocusManager.setLastFocusedProgrammatically(el);
+            }
+
+            origFocus.apply(this, arguments);
+        };
     }
 }
 

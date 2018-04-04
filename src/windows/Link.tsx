@@ -26,20 +26,15 @@ export interface LinkContext {
     isRxParentAText?: boolean;
 }
 
-// Simple check for the presence of the updated React Native for Windows
-const HasFocusableWindows = (RNW.createFocusableComponent !== undefined);
-
-let FocusableText: RNW.FocusableComponentConstructor<RN.TextProps>;
-if (HasFocusableWindows) {
-    FocusableText = RNW.createFocusableComponent(RN.Text) as
-        RNW.FocusableComponentConstructor<RN.TextProps>;
-}
+let FocusableText = RNW.createFocusableComponent(RN.Text);
 
 export class Link extends LinkCommon implements FocusManagerFocusableComponent {
     static contextTypes: React.ValidationMap<any> = {
         isRxParentAText: PropTypes.bool
     };
-    context: LinkContext;
+
+    // Will be assiged by super - just re-typing here
+    context!: LinkContext;
 
     private _focusableElement : RNW.FocusableWindows<RN.TextProps> | null = null;
 
@@ -48,11 +43,6 @@ export class Link extends LinkCommon implements FocusManagerFocusableComponent {
     }
 
     protected _render(internalProps: RN.TextProps) {
-        // Fallback to native-common fast if the keyboard enabled component is not available
-        if (!HasFocusableWindows) {
-            return super._render(internalProps);
-        }
-
         if (this.context && !this.context.isRxParentAText) {
 
             let tabIndex: number | undefined = this.getTabIndex();
@@ -76,7 +66,8 @@ export class Link extends LinkCommon implements FocusManagerFocusableComponent {
                 handledKeyUpKeys: UP_KEYCODES,
                 onKeyDown: this._onKeyDown,
                 onKeyUp: this._onKeyUp,
-                onFocus: this._onFocus
+                onFocus: this._onFocus,
+                onAccessibilityTap: this._onPress
             };
 
             return (
@@ -113,24 +104,20 @@ export class Link extends LinkCommon implements FocusManagerFocusableComponent {
     }
 
     private _onKeyDown = (e: React.SyntheticEvent<any>): void => {
-        if (this.props.onPress) {
-            let keyEvent = EventHelpers.toKeyboardEvent(e);
-            let key = keyEvent.keyCode;
-            // ENTER triggers press on key down
-            if (key === KEY_CODE_ENTER) {
-                // Defer to base class
-                this._onPress(keyEvent);
-            }
+        let keyEvent = EventHelpers.toKeyboardEvent(e);
+        let key = keyEvent.keyCode;
+        // ENTER triggers press on key down
+        if (key === KEY_CODE_ENTER) {
+            // Defer to base class
+            this._onPress(keyEvent);
         }
     }
 
     private _onKeyUp = (e: React.SyntheticEvent<any>): void => {
-        if (this.props.onPress) {
-            let keyEvent = EventHelpers.toKeyboardEvent(e);
-            if (keyEvent.keyCode === KEY_CODE_SPACE) {
-                 // Defer to base class
-                this._onPress(keyEvent);
-            }
+        let keyEvent = EventHelpers.toKeyboardEvent(e);
+        if (keyEvent.keyCode === KEY_CODE_SPACE) {
+            // Defer to base class
+            this._onPress(keyEvent);
         }
     }
 

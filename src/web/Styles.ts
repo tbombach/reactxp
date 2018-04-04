@@ -201,7 +201,7 @@ export class Styles extends RX.Styles {
     });
 
     // Converts a property from JavaScript style (camel-case) to CSS style (lowercase with hyphens).
-    private _convertJsToCssStyle(prop: string): string {
+    convertJsToCssStyle(prop: string): string {
         let cssString = '';
 
         if (prop) {
@@ -224,7 +224,7 @@ export class Styles extends RX.Styles {
         let aliases: CssAliasMap = {};
 
         _.each(_.keys(jsStyleAliases), prop => {
-            aliases[prop] = this._convertJsToCssStyle(jsStyleAliases[prop]);
+            aliases[prop] = this.convertJsToCssStyle(jsStyleAliases[prop]);
         });
 
         return aliases;
@@ -250,7 +250,7 @@ export class Styles extends RX.Styles {
         return parentConstructor.name ? parentConstructor.name : parentConstructor;
     }
 
-    private _adaptStyles(def: any, validate: boolean): any {
+    private _adaptStyles(def: any, validate: boolean): Readonly<any> {
         if (validate) {
             StyleLeakDetector.detectLeaks(def);
         }
@@ -437,7 +437,7 @@ export class Styles extends RX.Styles {
             def['wordWrap'] = 'break-word';
         }
 
-        return def;
+        return AppConfig.isDevelopmentMode() ? Object.freeze(def) : def;
     }
 }
 

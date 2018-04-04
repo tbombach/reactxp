@@ -29,48 +29,45 @@ export interface ViewContext {
     focusManager?: FocusManager;
 }
 
-// Simple check for the presence of the updated React Native for Windows
-const HasFocusableWindows = (RNW.createFocusableComponent !== undefined);
-
-let FocusableView: RNW.FocusableComponentConstructor<RN.ViewProps>;
-let FocusableAnimatedView: RNW.FocusableComponentConstructor<RN.ViewProps>;
-if (HasFocusableWindows) {
-    FocusableView = RNW.createFocusableComponent(RN.View) as
-        RNW.FocusableComponentConstructor<RN.ViewProps>;
-    FocusableAnimatedView = RNW.createFocusableComponent(RN.Animated.View) as
-        RNW.FocusableComponentConstructor<RN.ViewProps>;
-}
+let FocusableView = RNW.createFocusableComponent(RN.View);
+let FocusableAnimatedView = RNW.createFocusableComponent(RN.Animated.View);
 
 export class View extends ViewCommon implements React.ChildContextProvider<ViewContext>, FocusManagerFocusableComponent {
     static contextTypes: React.ValidationMap<any> = {
         isRxParentAText: PropTypes.bool,
         focusManager: PropTypes.object
     };
-    context: ViewContext;
+    // Context is provided by super - just re-typing here
+    context!: ViewContext;
 
     static childContextTypes: React.ValidationMap<any> = {
         isRxParentAText: PropTypes.bool.isRequired,
         focusManager: PropTypes.object
     };
 
-    private _onKeyDown: (e: React.SyntheticEvent<any>) => void;
-    private _onMouseEnter: (e: React.SyntheticEvent<any>) => void;
-    private _onMouseLeave: (e: React.SyntheticEvent<any>) => void;
-    private _onMouseOver: (e: React.SyntheticEvent<any>) => void;
-    private _onMouseMove: (e: React.SyntheticEvent<any>) => void;
+    private _onKeyDown: ((e: React.SyntheticEvent<any>) => void) | undefined;
+    private _onMouseEnter: ((e: React.SyntheticEvent<any>) => void) | undefined;
+    private _onMouseLeave: ((e: React.SyntheticEvent<any>) => void) | undefined;
+    private _onMouseOver: ((e: React.SyntheticEvent<any>) => void) | undefined;
+    private _onMouseMove: ((e: React.SyntheticEvent<any>) => void) | undefined;
 
     private _focusableElement : RNW.FocusableWindows<RN.ViewProps> | null = null;
 
-    private _focusManager: FocusManager;
-    private _isFocusLimited: boolean;
+    private _focusManager: FocusManager|undefined;
+    private _limitFocusWithin = false;
+    private _isFocusLimited = false;
 
     constructor(props: Types.ViewProps, context: ViewContext) {
         super(props);
 
-        if (props.restrictFocusWithin || props.limitFocusWithin) {
+        this._limitFocusWithin =
+            (props.limitFocusWithin === Types.LimitFocusType.Limited) ||
+            (props.limitFocusWithin === Types.LimitFocusType.Accessible);
+
+        if (props.restrictFocusWithin || this._limitFocusWithin) {
             this._focusManager = new FocusManager(context && context.focusManager);
 
-            if (props.limitFocusWithin) {
+            if (this._limitFocusWithin) {
                 this.setFocusLimited(true);
             }
         }
@@ -80,10 +77,11 @@ export class View extends ViewCommon implements React.ChildContextProvider<ViewC
         super.componentWillReceiveProps(nextProps);
 
         if (AppConfig.isDevelopmentMode()) {
-            if (!!this.props.restrictFocusWithin !== !!nextProps.restrictFocusWithin) {
+            if (this.props.restrictFocusWithin !== nextProps.restrictFocusWithin) {
                 console.error('View: restrictFocusWithin is readonly and changing it during the component life cycle has no effect');
             }
-            if (!!this.props.limitFocusWithin !== !!nextProps.limitFocusWithin) {
+
+            if (this.props.limitFocusWithin !== nextProps.limitFocusWithin) {
                 console.error('View: limitFocusWithin is readonly and changing it during the component life cycle has no effect');
             }
         }
@@ -96,8 +94,8 @@ export class View extends ViewCommon implements React.ChildContextProvider<ViewC
                 this._focusManager.restrictFocusWithin();
             }
 
-            if (this.props.limitFocusWithin && this._isFocusLimited) {
-                this._focusManager.limitFocusWithin();
+            if (this._limitFocusWithin && this._isFocusLimited) {
+                this._focusManager.limitFocusWithin(this.props.limitFocusWithin!!!);
             }
         }
     }
@@ -203,11 +201,6 @@ export class View extends ViewCommon implements React.ChildContextProvider<ViewC
     }
 
     render(): JSX.Element {
-        // Exit fast if the keyboard enabled component is not available
-        if (!HasFocusableWindows) {
-            return super.render();
-        }
-
         if (this.props.tabIndex !== undefined) {
             let tabIndex: number = this.getTabIndex() || 0;
             let windowsTabFocusable: boolean =  tabIndex >= 0;
@@ -231,12 +224,13 @@ export class View extends ViewCommon implements React.ChildContextProvider<ViewC
                 onKeyDown: this._onFocusableKeyDown,
                 onKeyUp: this._onFocusableKeyUp,
                 onFocus: this._onFocus,
-                onBlur: this._onBlur
+                onBlur: this._onBlur,
+                onAccessibilityTap: this._internalProps.onPress
             };
 
             let PotentiallyAnimatedFocusableView = this._isButton(this.props) ? FocusableAnimatedView : FocusableView;
             return (
-                <PotentiallyAnimatedFocusableView 
+                <PotentiallyAnimatedFocusableView
                     { ...focusableViewProps }
                 />
             );
@@ -297,14 +291,14 @@ export class View extends ViewCommon implements React.ChildContextProvider<ViewC
     }
 
     setFocusLimited(limited: boolean) {
-        if (!this._focusManager || !this.props.limitFocusWithin) {
-            console.error('View: setFocusLimited method requires limitFocusWithin property to be set to true');
+        if (!this._focusManager || !this._limitFocusWithin) {
+            console.error('View: setFocusLimited method requires limitFocusWithin property to be set');
             return;
         }
 
         if (limited && !this._isFocusLimited) {
             this._isFocusLimited = true;
-            this._focusManager.limitFocusWithin();
+            this._focusManager.limitFocusWithin(this.props.limitFocusWithin!!!);
         } else if (!limited && this._isFocusLimited) {
             this._isFocusLimited = false;
             this._focusManager.removeFocusLimitation();
@@ -318,6 +312,10 @@ export class View extends ViewCommon implements React.ChildContextProvider<ViewC
         } else {
             super.setNativeProps(nativeProps);
         }
+    }
+
+    protected _isButton(viewProps: Types.ViewProps): boolean {
+        return super._isButton(viewProps) || !!viewProps.onContextMenu;
     }
 
     private _onFocusableKeyDown = (e: React.SyntheticEvent<any>): void => {

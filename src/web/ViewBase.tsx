@@ -10,6 +10,7 @@
 import _ = require('./utils/lodashMini');
 import ReactDOM = require('react-dom');
 
+import { default as FrontLayerViewManager } from './FrontLayerViewManager';
 import AppConfig from '../common/AppConfig';
 import RX = require('../common/Interfaces');
 import SyncTasks = require('synctasks');
@@ -30,6 +31,7 @@ export abstract class ViewBase<P extends Types.ViewProps, S> extends RX.ViewBase
     abstract render(): JSX.Element;
     protected abstract _getContainer(): HTMLElement|null;
     private _isMounted = false;
+    private _isPopupDisplayed = false;
 
     // Sets the activation state so we can stop our periodic timer
     // when the app is in the background.
@@ -39,7 +41,7 @@ export abstract class ViewBase<P extends Types.ViewProps, S> extends RX.ViewBase
 
             // Cancel any existing timers.
             if (ViewBase._viewCheckingTimer) {
-                window.clearInterval(ViewBase._viewCheckingTimer);
+                clearInterval(ViewBase._viewCheckingTimer);
                 ViewBase._viewCheckingTimer = undefined;
             }
 
@@ -80,7 +82,7 @@ export abstract class ViewBase<P extends Types.ViewProps, S> extends RX.ViewBase
         this._layoutReportList.push(func);
 
         if (!ViewBase._layoutReportingTimer) {
-            ViewBase._layoutReportingTimer = window.setTimeout(() => {
+            ViewBase._layoutReportingTimer = setTimeout(() => {
                 ViewBase._layoutReportingTimer = undefined;
                 ViewBase._reportDeferredLayoutChanges();
             }, 0);
@@ -199,9 +201,20 @@ export abstract class ViewBase<P extends Types.ViewProps, S> extends RX.ViewBase
     }
 
     componentDidUpdate() {
+        const isPopupDisplayed = FrontLayerViewManager.isPopupDisplayed();
         if (this.props.onLayout) {
-            this._checkAndReportLayout();
+            if (isPopupDisplayed && !this._isPopupDisplayed) {
+                // A popup was just added to DOM. Checking layout now would stall script
+                // execution because the browser would have to do a reflow. Avoid that
+                // by deferring the work.
+                setTimeout(() => {
+                    this._checkAndReportLayout();
+                }, 0);
+            } else {
+                this._checkAndReportLayout();
+            }
         }
+        this._isPopupDisplayed = isPopupDisplayed;
     }
 
     private static _onResize() {
